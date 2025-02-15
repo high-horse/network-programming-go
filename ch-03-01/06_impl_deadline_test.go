@@ -1,3 +1,4 @@
+// Listing 3-9: A server-enforced deadline terminates the network connection (deadline_test.go).
 package ch0301
 
 import (
@@ -29,6 +30,7 @@ func TestDeadline(t *testing.T) {
 			close(sync) 	// read from sync shouldn't block due to early return
 		}()
 		
+		// implement deadline
 		err = conn.SetDeadline(time.Now().Add(time.Second * 5))
 		if err != nil {
 			t.Error(err)
@@ -44,6 +46,7 @@ func TestDeadline(t *testing.T) {
 		
 		sync <- struct{}{}
 		
+		// extend deadline by 5 second
 		err = conn.SetDeadline(time.Now().Add(time.Second * 5))
 		if err != nil {
 			t.Error(err)
