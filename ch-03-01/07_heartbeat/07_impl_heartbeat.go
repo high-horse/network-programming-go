@@ -1,5 +1,4 @@
 package main
-// package ch03
 
 import (
 	"context"
@@ -8,13 +7,13 @@ import (
 	"time"
 )
 
+const defaultPingInterval = 30 * time.Second
 
 func main() {
 	ExamplePinger()
 }
-const defaultPingInterval = 30 * time.Second
 
-func Pinger(ctx context.Context, w io.Writer, reset <-chan time.Duration) {
+func pinger(ctx context.Context, w io.Writer, reset <-chan time.Duration) {
 	var interval time.Duration
 
 	// Initial select to either cancel or set the interval from the reset channel
@@ -58,6 +57,7 @@ func Pinger(ctx context.Context, w io.Writer, reset <-chan time.Duration) {
 				return
 			}
 		}
+
 		// Reset the timer with the updated interval
 		_ = timer.Reset(interval)
 	}
@@ -69,12 +69,16 @@ func ExamplePinger() {
 	r, w := io.Pipe() // Use io.Pipe() instead of a net.Conn for testing
 
 	done := make(chan struct{})
-	resetTimer := make(chan time.Duration, 1)
-	resetTimer <- time.Second // Set initial ping interval to 1 second
+	resetTimer := make(chan time.Duration) // Unbuffered channel to prevent deadlock
+
+	// Send initial ping interval (1 second) to resetTimer channel
+	go func() {
+		resetTimer <- time.Second
+	}()
 
 	// Start a goroutine for the pinger function
 	go func() {
-		Pinger(ctx, w, resetTimer)
+		pinger(ctx, w, resetTimer)
 		close(done)
 	}()
 
@@ -82,7 +86,7 @@ func ExamplePinger() {
 	receivePing := func(d time.Duration, r io.Reader) {
 		if d >= 0 {
 			fmt.Printf("resetting timer (%s)\n", d)
-			resetTimer <- d
+			resetTimer <- d // Reset the timer with the new interval
 		}
 
 		now := time.Now()
