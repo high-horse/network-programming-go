@@ -43,9 +43,7 @@ func TestScanner(t *testing.T) {
 		words = append(words, scanner.Text())
 	}
 	
-	expected := []string{
-		"The", "bigger", "the", "interface", "the", "weaker", "the", "abstraction.",
-	}
+	expected := []string{"The", "bigger", "the", "interface,", "the", "weaker", "the", "abstraction."}
 	
 	if !reflect.DeepEqual(words, expected) {
 		t.Fatal("inaccurate  scanned word list  ", words)
