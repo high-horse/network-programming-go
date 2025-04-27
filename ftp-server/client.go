@@ -7,6 +7,7 @@ import (
     "net"
     "os"
     "strings"
+    "time"
 )
 
 func runClient() {
@@ -16,7 +17,6 @@ func runClient() {
     }
     defer conn.Close()
 
-    // Read welcome message
     readResponse(conn)
 
     sendCommand(conn, "USER anonymous")
@@ -29,11 +29,10 @@ func runClient() {
     readResponse(conn)
 
     sendCommand(conn, "RETR " + *filePath)
-    readResponse(conn) // <-- Important: Read the "150 Opening data connection" response
+    readResponse(conn)
 
     destFilePath := *destPath
     if destFilePath == "." {
-        // If destination is ".", save with the same name as source
         parts := strings.Split(*filePath, "/")
         destFilePath = parts[len(parts)-1]
     }
@@ -44,13 +43,17 @@ func runClient() {
     }
     defer dest.Close()
 
-    progressWriter := &ProgressWriter{Writer: dest}
+    progressWriter := &ProgressWriter{
+        Writer: dest,
+        start:  time.Now(),
+    }
+
     _, err = io.Copy(progressWriter, conn)
     if err != nil {
         log.Fatalf("Download error: %v", err)
     }
 
-    fmt.Println("\nFile downloaded successfully to", destFilePath)
+    fmt.Printf("\nFile downloaded successfully to %s\n", destFilePath)
 
     sendCommand(conn, "QUIT")
     readResponse(conn)
@@ -59,14 +62,25 @@ func runClient() {
 type ProgressWriter struct {
     Writer io.Writer
     total  int64
+    start  time.Time
 }
 
 func (pw *ProgressWriter) Write(p []byte) (int, error) {
     n, err := pw.Writer.Write(p)
     if err == nil {
         pw.total += int64(n)
-        mb := float64(pw.total) / (1024 * 1024)
-        fmt.Printf("\rDownloaded: %.2f MB", mb)
+        elapsed := time.Since(pw.start).Seconds()
+        speedMBs := float64(pw.total) / (1024 * 1024) / elapsed
+
+        downloadedMB := float64(pw.total) / (1024 * 1024)
+        eta := "-"
+        if speedMBs > 0 {
+            estimatedTotalSeconds := float64(pw.total) / (speedMBs * 1024 * 1024)
+            etaDuration := time.Duration(estimatedTotalSeconds-float64(pw.start.Second())) * time.Second
+            eta = etaDuration.Round(time.Second).String()
+        }
+
+        fmt.Printf("\rDownloaded: %.2f MB | Speed: %.2f MB/s | ETA: %s", downloadedMB, speedMBs, eta)
     }
     return n, err
 }
