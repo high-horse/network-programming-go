@@ -10,6 +10,17 @@ import (
     "time"
 )
 
+func readRawResponse(conn net.Conn) string {
+    buf := make([]byte, 1024)
+    n, err := conn.Read(buf)
+    if err != nil {
+        log.Fatalf("Read response error: %v", err)
+    }
+    response := strings.TrimSpace(string(buf[:n]))
+    fmt.Println("Server:", response)
+    return response
+}
+
 func runClient() {
     conn, err := net.Dial("tcp", *addr)
     if err != nil {
@@ -24,6 +35,21 @@ func runClient() {
 
     sendCommand(conn, "PASS anonymous")
     readResponse(conn)
+
+    sendCommand(conn, "INFO")
+    info := readRawResponse(conn)
+
+    // Extract file name from INFO response
+    destFilePath_ := *destPath
+    if destFilePath_ == "." {
+        infoParts := strings.Split(info, ": ")
+        if len(infoParts) == 2 {
+            pathParts := strings.Split(strings.TrimSpace(infoParts[1]), "/")
+            destFilePath_ = pathParts[len(pathParts)-1]
+        } else {
+            destFilePath_ = "downloaded_file"
+        }
+    }
 
     sendCommand(conn, "TYPE I")
     readResponse(conn)
