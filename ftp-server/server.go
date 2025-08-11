@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"path/filepath"
 )
 
 func runServer() {
@@ -68,7 +69,9 @@ func handleConnection(conn net.Conn) {
 			conn.Write([]byte("226 Transfer complete\r\n"))
 			return
 		case strings.HasPrefix(input, "INFO"):
-			conn.Write([]byte("200 Serving file: " + *filePath + "\r\n"))
+			// conn.Write([]byte("200 Serving file: " + *filePath + "\r\n"))
+			filename := filepath.Base(*filePath)
+			conn.Write([]byte("200 Serving file: " + filename + "\r\n"))
 			// return
 		case strings.HasPrefix(input, "QUIT"):
 			conn.Write([]byte("221 Goodbye\r\n"))
