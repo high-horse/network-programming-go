@@ -69,7 +69,7 @@ func handleConnection(conn net.Conn) {
 			return
 		case strings.HasPrefix(input, "INFO"):
 			conn.Write([]byte("200 Serving file: " + *filePath + "\r\n"))
-            return
+			// return
 		case strings.HasPrefix(input, "QUIT"):
 			conn.Write([]byte("221 Goodbye\r\n"))
 			return
