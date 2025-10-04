@@ -1,2 +1,5 @@
 examples/
 bin/
+
+*.sql
+*.out

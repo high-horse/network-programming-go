@@ -1,0 +1,48 @@
+package main
+
+import "flag"
+
+
+var (
+	programMode = flag.String("mode", "c", "Program mode: c (client) or s (server)")
+	port = flag.Int("port", 2121, "Port to listen on or connect to")
+	host = flag.String("host", "localhost", "Host to connect to (client mode only)")
+	timeout = flag.Int("timeout", 30, "Timeout in seconds for network operations")
+	verbose = flag.Bool("v", false, "Enable verbose logging")
+	help = flag.Bool("h", false, "Show help message")
+)
+
+func main() {
+
+	flag.Parse()
+
+	if *help {
+		flag.Usage()
+		return
+	}
+
+	if *programMode != "c" && *programMode != "s" {
+		println("Invalid mode. Use 'c' for client or 's' for server.")
+		return
+	}
+	
+	if *verbose {
+		println("Verbose logging enabled")
+	}
+	println("Program mode:", *programMode)
+	println("Port:", *port)
+	if *programMode == "c" {
+		println("Host:", *host)
+	}
+	println("Timeout:", *timeout, "seconds")
+	
+	// Placeholder for actual client/server logic
+	if *programMode == "s" {
+		println("Starting server...")
+		// Start server logic here
+	} else {
+		println("Starting client...")
+		// Start client logic here
+	}
+	
+}
