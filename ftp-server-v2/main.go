@@ -13,10 +13,16 @@ import (
 
 var dataListener net.Listener
 
+var serverAddr *string
+var port *string
+
 func main() {
 	mode := flag.String("mode", "client", "server or client")
-	flag.Parse()
+	serverAddr = flag.String("addr", "localhost:2121", "Ip:port of server hosting the file")
+	port = flag.String("port", ":2121", "Port to host")
 
+	flag.Parse()
+	
 	if *mode == "server" {
 		runServer()
 	} else {
@@ -25,13 +31,13 @@ func main() {
 }
 
 func runServer() {
-	ln, err := net.Listen("tcp", ":2121")
+	ln, err := net.Listen("tcp", *port)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		return
 	}
 	defer ln.Close()
-	fmt.Println("Server listening on :2121")
+	fmt.Println("Server listening on %s", *port)
 
 	for {
 		conn, err := ln.Accept()
@@ -70,6 +76,9 @@ func handleConnection(conn net.Conn) {
 		cmd, arg := parseCmd(line)
 
 		switch strings.ToUpper(cmd) {
+		case "HELP": 
+			helpStr := "USER username \nPASS password \nPASV upgrade_commection\nPWD current-dir \nLIST list ls \nRETR file_name_to_retrive \nQUIT quit"
+			sendLine(writer, helpStr)
 		case "USER":
 			sendLine(writer, "331 User name okay, need password")
 		case "PASS":
@@ -298,7 +307,7 @@ func fileModeToStr(mode os.FileMode) string {
 
 
 func runClient() {
-	conn, err := net.Dial("tcp", "localhost:2121")
+	conn, err := net.Dial("tcp", *serverAddr)
 	if err != nil {
 		fmt.Println("Failed to connect:", err)
 		return
