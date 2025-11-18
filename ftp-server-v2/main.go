@@ -30,6 +30,16 @@ func main() {
 	}
 }
 
+func getLANIP() string {
+    addrs, _ := net.InterfaceAddrs()
+    for _, addr := range addrs {
+        if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+            return strings.ReplaceAll(ipnet.IP.String(), ".", ",")
+        }
+    }
+    return "127,0,0,1" // fallback
+}
+
 func runServer(sharedDir string) {
 	ln, err := net.Listen("tcp", *port)
 	if err != nil {
@@ -310,7 +320,7 @@ func handleConnection(conn net.Conn, sharedDir string) {
 			p2 := addr.Port % 256
 			
 			// Send PASV response with server IP and port
-			hostIP := "127,0,0,1" // You should get the actual IP of your server here
+			hostIP :=  getLANIP()// "127,0,0,1" // You should get the actual IP of your server here
 			sendLine(writer, fmt.Sprintf("227 Entering Passive Mode (%s,%d,%d)", hostIP, p1, p2))
 		case "QUIT":
 			sendLine(writer, "221 Goodbye")
