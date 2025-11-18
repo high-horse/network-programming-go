@@ -37,7 +37,7 @@ func runServer() {
 		return
 	}
 	defer ln.Close()
-	fmt.Println("Server listening on %s", *port)
+	fmt.Println("Server listening on ", *port)
 
 	for {
 		conn, err := ln.Accept()
