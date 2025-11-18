@@ -20,24 +20,24 @@ func main() {
 	mode := flag.String("mode", "client", "server or client")
 	serverAddr = flag.String("addr", "localhost:2121", "Ip:port of server hosting the file")
 	port = flag.String("port", ":2121", "Port to host")
-
+	sharedDir := flag.String("dir", "./", "Directory you want to share vis FTP")
 	flag.Parse()
 	
 	if *mode == "server" {
-		runServer()
+		runServer(*sharedDir)
 	} else {
 		runClient()
 	}
 }
 
-func runServer() {
+func runServer(sharedDir string) {
 	ln, err := net.Listen("tcp", *port)
 	if err != nil {
-		fmt.Println("Error listening:", err)
+		fmt.Print("Error listening:", err)
 		return
 	}
 	defer ln.Close()
-	fmt.Println("Server listening on ", *port)
+	fmt.Printf("Server listening on %s serving %s", *port, sharedDir)
 
 	for {
 		conn, err := ln.Accept()
@@ -46,11 +46,11 @@ func runServer() {
 			continue
 		}
 		fmt.Println("Client connected")
-		handleConnection(conn)
+		handleConnection(conn, sharedDir)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, sharedDir string) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
@@ -58,7 +58,9 @@ func handleConnection(conn net.Conn) {
 	sendLine(writer, "220 Simple FTP server ready")
 
 	authenticated := false
-	currentDir := "./"
+
+	rootDir := sharedDir
+	currentDir := sharedDir //"./"
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -77,7 +79,17 @@ func handleConnection(conn net.Conn) {
 
 		switch strings.ToUpper(cmd) {
 		case "HELP": 
-			helpStr := "USER username \nPASS password \nPASV upgrade_commection\nPWD current-dir \nLIST list ls \nRETR file_name_to_retrive \nQUIT quit"
+			helpStr := `
+			USER username 
+			PASS password 
+			PASV upgrade_commection
+			PWD current-dir 
+			LIST list 
+			CWD change_working_directory
+			CDUP move_cd_to_parent_dir
+			RETR file_name_to_retrive 
+			QUIT quit
+			`
 			sendLine(writer, helpStr)
 		case "USER":
 			sendLine(writer, "331 User name okay, need password")
@@ -91,6 +103,77 @@ func handleConnection(conn net.Conn) {
 				continue
 			}
 			sendLine(writer, fmt.Sprintf("257 \"%s\"", currentDir))
+
+		case "OLD_CWD":
+			newDir := filepath.Join(currentDir, arg)
+			if _, err := os.Stat(newDir); err != nil {
+				sendLine(writer, "550 Directory not found")
+			} else {
+				currentDir = newDir
+				sendLine(writer, "250 Directory changed")
+			}
+
+		case "CWD":
+			if !authenticated {
+				sendLine(writer, "530 Not logged in")
+				continue
+			}
+			if arg == "" {
+				sendLine(writer, "501 Missing directory")
+				continue
+			}
+
+			// Build new path
+			newPath := filepath.Join(currentDir, arg)
+
+			// Normalize path
+			newPath, err := filepath.Abs(newPath)
+			if err != nil {
+				sendLine(writer, "550 Invalid path")
+				continue
+			}
+
+			// Ensure user cannot leave rootDir
+			if !strings.HasPrefix(newPath, rootDir) {
+				sendLine(writer, "550 Access denied")
+				continue
+			}
+
+			// Check if directory exists
+			info, err := os.Stat(newPath)
+			if err != nil || !info.IsDir() {
+				sendLine(writer, "550 Not a directory")
+				continue
+			}
+
+			currentDir = newPath
+			sendLine(writer, "250 Directory successfully changed")
+
+
+		case "CDUP":
+			if !authenticated {
+				sendLine(writer, "530 Not logged in")
+				continue
+			}
+
+			parent := filepath.Dir(currentDir)
+
+			// Normalize
+			parent, err := filepath.Abs(parent)
+			if err != nil {
+				sendLine(writer, "550 Invalid path")
+				continue
+			}
+
+			// Prevent escape above root
+			if !strings.HasPrefix(parent, rootDir) {
+				sendLine(writer, "550 Access denied")
+				continue
+			}
+
+			currentDir = parent
+			sendLine(writer, "200 Command okay")
+
 		case "LIST":
 			if !authenticated {
 				sendLine(writer, "530 Not logged in")
