@@ -11,7 +11,6 @@ import (
 	"strings"
 )
 
-var dataListener net.Listener
 
 var serverAddr *string
 var port *string
@@ -56,11 +55,13 @@ func runServer(sharedDir string) {
 			continue
 		}
 		fmt.Println("Client connected")
-		handleConnection(conn, sharedDir)
+		go handleConnection(conn, sharedDir)
 	}
 }
 
 func handleConnection(conn net.Conn, sharedDir string) {
+	var dataListener net.Listener
+	
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
@@ -152,7 +153,7 @@ func handleConnection(conn net.Conn, sharedDir string) {
 			// Check if directory exists
 			info, err := os.Stat(newPath)
 			if err != nil || !info.IsDir() {
-				sendLine(writer, "550 Not a directory")
+				sendLine(writer, "550 NhandleConot a directory")
 				continue
 			}
 
@@ -230,24 +231,7 @@ func handleConnection(conn net.Conn, sharedDir string) {
 			dataListener = nil
 
 			sendLine(writer, "226 Directory send OK")
-			// handleLIST(writer, currentDir)
-			// files, err := os.ReadDir(currentDir)
-			// if err != nil {
-			// 	sendLine(writer, "550 Failed to list directory")
-			// 	continue
-			// }
-			// sendLine(writer, "150 Here comes the directory listing")
-			// for _, f := range files {
-			// 	info, err := f.Info()
-			// 	if err != nil {
-			// 		sendLine(writer, fmt.Sprintf("550 Could not stat file: %s", f.Name()))
-			// 		continue
-			// 	}
-			// 	modTime := info.ModTime().Format("Jan _2 15:04")
-			// 	line := fmt.Sprintf("%s %12d %s %s", fileModeToStr(info.Mode()), info.Size(), modTime, f.Name())
-			// 	sendLine(writer, line)
-			// }
-			// sendLine(writer, "226 Directory send OK")
+			
 		case "RETR":
 			if !authenticated {
 				sendLine(writer, "530 Not logged in")
@@ -287,25 +271,58 @@ func handleConnection(conn net.Conn, sharedDir string) {
 
 			sendLine(writer, "226 Transfer complete")
 
-			// if !authenticated {
-			// 	sendLine(writer, "530 Not logged in")
-			// 	continue
-			// }
-			// if arg == "" {
-			// 	sendLine(writer, "501 Syntax error in parameters or arguments")
-			// 	continue
-			// }
-			// filepath := filepath.Join(currentDir, arg)
-			// f, err := os.Open(filepath)
-			// if err != nil {
-			// 	sendLine(writer, "550 File not found")
-			// 	continue
-			// }
-			// defer f.Close()
-			// sendLine(writer, "150 Opening data connection for file transfer")
-			// io.Copy(writer, f)
-			// writer.Flush()
-			// sendLine(writer, "226 Transfer complete")
+		
+			case "STOR":
+			    if !authenticated {
+			        sendLine(writer, "530 Not logged in")
+			        continue
+			    }
+			    if arg == "" {
+			        sendLine(writer, "501 Syntax error in parameters or arguments")
+			        continue
+			    }
+			    if dataListener == nil {
+			        sendLine(writer, "425 Use PASV first")
+			        continue
+			    }
+			
+			    // Path for uploaded file
+			    filePath := filepath.Join(currentDir, arg)
+			
+			    // Create or overwrite the file
+			    f, err := os.Create(filePath)
+			    if err != nil {
+			        sendLine(writer, "550 Cannot create file")
+			        continue
+			    }
+			
+			    sendLine(writer, "150 Opening data connection for file upload")
+			
+			    // Accept incoming data connection
+			    dataConn, err := dataListener.Accept()
+			    if err != nil {
+			        sendLine(writer, "425 Can't open data connection")
+			        dataListener.Close()
+			        dataListener = nil
+			        f.Close()
+			        continue
+			    }
+			
+			    // Copy data from client to file
+			    _, copyErr := io.Copy(f, dataConn)
+			
+			    f.Close()
+			    dataConn.Close()
+			    dataListener.Close()
+			    dataListener = nil
+			
+			    if copyErr != nil {
+			        sendLine(writer, "426 Connection closed; transfer aborted")
+			        continue
+			    }
+			
+			    sendLine(writer, "226 Transfer complete")
+
 		case "PASV":
 			// Listen on any available port
 			dataListener, err = net.Listen("tcp", "0.0.0.0:0")
@@ -525,6 +542,86 @@ func runClient() {
 
 			continue
 		}
+
+		if strings.HasPrefix(cmdUpper, "STOR") {
+		    if dataConn == nil {
+		        fmt.Println("No data connection established. Use PASV first.")
+		        continue
+		    }
+		
+		    parts := strings.SplitN(cmdLine, " ", 2)
+		    if len(parts) < 2 {
+		        fmt.Println("No filename specified for STOR")
+		        continue
+		    }
+		    filename := parts[1]
+		
+		    // Open local file
+		    file, err := os.Open(filename)
+		    if err != nil {
+		        fmt.Println("Failed to open file:", err)
+		        dataConn.Close()
+		        dataConn = nil
+		        continue
+		    }
+		
+		    // Send STOR command
+		    writer.WriteString(cmdLine + "\r\n")
+		    writer.Flush()
+		
+		    // Wait for 150
+		    transferOkay := false
+		    for {
+		        resp, err := reader.ReadString('\n')
+		        if err != nil {
+		            fmt.Println("Connection closed")
+		            return
+		        }
+		        fmt.Print("Server: " + resp)
+		        if strings.HasPrefix(resp, "150") {
+		            transferOkay = true
+		            break
+		        }
+		        if strings.HasPrefix(resp, "425") || strings.HasPrefix(resp, "530") || strings.HasPrefix(resp, "550") {
+		            dataConn.Close()
+		            dataConn = nil
+		            transferOkay = false
+		            break
+		        }
+		    }
+		
+		    if !transferOkay {
+		        file.Close()
+		        continue
+		    }
+		
+		    // Upload file bytes
+		    _, err = io.Copy(dataConn, file)
+		    file.Close()
+		    dataConn.Close()
+		    dataConn = nil
+		
+		    if err != nil {
+		        fmt.Println("Error uploading file:", err)
+		        continue
+		    }
+		
+		    // Wait for final response (226)
+		    for {
+		        resp, err := reader.ReadString('\n')
+		        if err != nil {
+		            fmt.Println("Connection closed")
+		            return
+		        }
+		        fmt.Print("Server: " + resp)
+		        if len(resp) >= 4 && resp[3] == ' ' {
+		            break
+		        }
+		    }
+		
+		    continue
+		}
+		
 
 		// Handle RETR (download) command
 		if strings.HasPrefix(cmdUpper, "RETR") {
@@ -801,58 +898,4 @@ func atoi(s string) int {
 		n = n*10 + int(c-'0')
 	}
 	return n
-}
-
-
-func runClient_old() {
-	conn, err := net.Dial("tcp", "localhost:2121")
-	if err != nil {
-		fmt.Println("Failed to connect:", err)
-		return
-	}
-	defer conn.Close()
-
-	reader := bufio.NewReader(conn)
-	console := bufio.NewReader(os.Stdin)
-	writer := bufio.NewWriter(conn)
-
-	// Read welcome message
-	line, _ := reader.ReadString('\n')
-	fmt.Print("Server: " + line)
-
-	for {
-		fmt.Print("ftp> ")
-		cmdLine, err := console.ReadString('\n')
-		if err != nil {
-			break
-		}
-		cmdLine = strings.TrimSpace(cmdLine)
-		if cmdLine == "" {
-			continue
-		}
-
-		writer.WriteString(cmdLine + "\r\n")
-		writer.Flush()
-
-		// Read server response(s)
-		for {
-			resp, err := reader.ReadString('\n')
-			if err != nil {
-				fmt.Println("Connection closed")
-				return
-			}
-			fmt.Print("Server: " + resp)
-			if len(resp) < 4 {
-				continue
-			}
-			// Responses start with 3-digit code and a space means last line
-			if resp[3] == ' ' {
-				break
-			}
-		}
-
-		if strings.HasPrefix(strings.ToUpper(cmdLine), "QUIT") {
-			break
-		}
-	}
 }
